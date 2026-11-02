@@ -57,6 +57,9 @@ tmux:
         deletions: "#[fg=red]"
         # 'clean' symbol
         clean: "#[fg=green,bold]"
+        # in-progress operation summary ('op' component): rebase/cherry-pick/revert
+        # pause reason other than a conflict (empty, edit, staged, ...).
+        op: "#[fg=yellow]"
 
     # The layout section defines what components gitmux shows and the order in
     # which they appear on tmux status bar.
@@ -68,6 +71,12 @@ tmux:
     #  - remote:            alias for `remote-branch` followed by `divergence`, for example: `origin/main ↓·2↑·1`
     #  - flags:             symbols representing the working tree state, for example `✚ 1 ⚑ 1 … 2`
     #  - stats:             insertions/deletions (lines), for example`Σ56 Δ21`
+    #  - op:                in-progress operation summary, showing the original branch
+    #                        and step progress of a rebase/multi-commit cherry-pick/revert,
+    #                        and the evidenced pause reason, for example
+    #                        `[rebase] ⎇ feature 1/3 conflict 2`.
+    #                        Missing or changed metadata is rendered as 'unknown'. A paused
+    #                        operation with zero conflicts is still shown as paused.
     #  - some string `foo`: any other character of string is directly shown, for example `foo` or `|`
     layout: [branch, remote-branch, divergence, " - ", flags]
 

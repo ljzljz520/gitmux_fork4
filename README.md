@@ -221,6 +221,7 @@ See the [`STYLES` section](https://man7.org/linux/man-pages/man1/tmux.1.html#STY
     insertions: '#[fg=green]'       # 'insertions' count
     deletions: '#[fg=red]'          # 'deletions' count
     clean: '#[fg=green,bold]'       # 'clean' symbol
+    op: '#[fg=yellow]'              # 'op' operation summary pause reason
 ```
 
 ### Layout components
@@ -260,7 +261,27 @@ This is the list of the possible keywords for `layout`:
 |     `remote`     | alias for `remote-branch` followed by `divergence` | `origin/main ↓·2↑·1` |
 |     `flags`      | Symbols representing the working tree state        |    `✚ 1 ⚑ 1 … 2`     |
 |     `stats`      | Insertions/deletions (lines). Disabled by default  |      `Σ56 Δ21`       |
+|       `op`       | In-progress operation summary (see below). Disabled by default | `[rebase] ⎇ feature 1/3 conflict 2` |
 | any string `foo` | Non-keywords are shown as-is                       |    `hello gitmux`    |
+
+#### The `op` component
+
+When a **rebase**, a **multi-commit cherry-pick** or a **revert** is paused, the
+optional `op` component shows, in one block:
+
+ - the operation label (`[rebase]`, `[cherry-pick]` or `[revert]`),
+ - the branch the operation runs on: the *original* branch for a rebase (which
+   leaves HEAD detached), the current branch for a cherry-pick/revert,
+ - the step progress, e.g. `1/3`,
+ - the evidenced reason why the operation is paused:
+   `conflict N` (unmerged entries), `edit`/`reword`/`break` (rebase todo
+   command), `staged` (conflicts resolved, waiting for `--continue`),
+   `empty` (applied commit became empty) or `unknown`.
+
+Missing or out-of-date metadata is rendered as `unknown` rather than guessed.
+A paused operation with zero conflicts is still displayed as paused (zero
+conflicts never means the operation is finished); the component simply
+disappears once `--continue` completes the sequence or `--abort` cleans it up.
 
 
 Some example layouts:
@@ -281,6 +302,10 @@ layout: [flags, " ", branch]
 ```
 ```yaml
 layout: [branch, "|", flags, "|", stats]
+```
+```yaml
+# add the in-progress operation summary (only visible during a rebase/cherry-pick/revert)
+layout: [branch, " ", op, " - ", flags]
 ```
 
 

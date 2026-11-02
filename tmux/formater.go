@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/arl/gitmux/operation"
 	"github.com/arl/gitstatus"
 	"gopkg.in/yaml.v3"
 )
@@ -59,6 +60,8 @@ type styles struct {
 
 	Insertions string // Insertions is the style string printed before the count of inserted lines.
 	Deletions  string // Deletions is the style string printed before the count of deleted lines.
+
+	Op string // Op is the style string printed before the in-progress operation summary.
 }
 
 const (
@@ -101,6 +104,11 @@ type options struct {
 type Formater struct {
 	Config
 	st *gitstatus.Status
+
+	// Op describes the in-progress multi-step operation (rebase,
+	// cherry-pick or revert), if any. It powers the optional 'op' layout
+	// component and may be nil.
+	Op *operation.Info
 }
 
 // truncate returns s, truncated so that it is no more than max runes long.
@@ -200,6 +208,8 @@ func (f *Formater) format() string {
 			comps = append(comps, f.flags())
 		case "stats":
 			comps = append(comps, f.stats())
+		case "op":
+			comps = append(comps, f.operation())
 		default:
 			sb.WriteString(joinComps())
 			sb.WriteString(f.Styles.Clear)
@@ -239,6 +249,60 @@ func (f *Formater) specialState() string {
 	}
 
 	s += f.currentRef()
+	return s
+}
+
+// unknownToken is rendered in the operation summary whenever a piece of
+// metadata is missing or inconsistent.
+const unknownToken = "unknown"
+
+// operation renders the optional in-progress operation summary, for example:
+//
+//	[rebase] ⎇ feature 1/3 conflict 2
+//
+// It shows the operation label, the original (rebase) or current
+// (cherry-pick/revert) branch, the step progress and the evidenced reason why
+// the operation is paused. Missing or changed metadata is rendered as
+// 'unknown', but a paused operation with zero conflicts is still shown as
+// paused (never as completed). Returns an empty string when no operation is in
+// progress.
+func (f *Formater) operation() string {
+	op := f.Op
+	if op == nil {
+		return ""
+	}
+
+	s := f.Styles.Clear + f.Styles.State +
+		fmt.Sprintf("[%s] ", string(op.Kind))
+
+	// Branch the operation runs on (original branch when rebasing).
+	branch := op.Branch
+	if branch == "" {
+		branch = unknownToken
+	}
+	branch = truncate(branch, f.Options.Ellipsis, f.Options.BranchMaxLen, f.Options.BranchTrim)
+	s += fmt.Sprintf("%s%s%s%s", f.Styles.Clear, f.Styles.Branch, f.Symbols.Branch, branch)
+
+	// Step progress.
+	s += " " + f.Styles.Clear + f.Styles.Divergence
+	if op.Step < 0 || op.Total < 0 {
+		s += unknownToken
+	} else {
+		s += fmt.Sprintf("%d/%d", op.Step, op.Total)
+	}
+
+	// Pause reason.
+	reason := string(op.Reason)
+	style := f.Styles.Op
+	if op.Reason == operation.ReasonConflict {
+		style = f.Styles.Conflict
+		reason = fmt.Sprintf("conflict %d", op.Conflicts)
+	}
+	if reason == "" {
+		reason = unknownToken
+	}
+	s += fmt.Sprintf(" %s%s%s", f.Styles.Clear, style, reason)
+
 	return s
 }
 
@@ -300,7 +364,7 @@ func (f *Formater) appendFlag(flags []string, style, symbol string, count int) [
 	if count == 0 {
 		return flags
 	}
-	
+
 	if f.Options.FlagsWithoutCount {
 		// When flags_without_count is true, show symbol only (empty string if symbol is empty)
 		if symbol == "" {
@@ -308,7 +372,7 @@ func (f *Formater) appendFlag(flags []string, style, symbol string, count int) [
 		}
 		return append(flags, fmt.Sprintf("%s%s", style, symbol))
 	}
-	
+
 	// When flags_without_count is false, show symbol + count, or just count if symbol is empty
 	return append(flags, fmt.Sprintf("%s%s%d", style, symbol, count))
 }

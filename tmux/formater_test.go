@@ -4,6 +4,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/arl/gitmux/operation"
 	"github.com/arl/gitstatus"
 )
 
@@ -1427,6 +1428,117 @@ func TestFlagsWithEmptySymbolsAndFlagsWithoutCount(t *testing.T) {
 			compareStrings(t, tt.want, f.flags())
 		})
 	}
+}
+
+func TestOperation(t *testing.T) {
+	tests := []struct {
+		name string
+		op   *operation.Info
+		want string
+	}{
+		{
+			name: "no operation in progress",
+			op:   nil,
+			want: "",
+		},
+		{
+			name: "rebase conflict with branch and progress",
+			op: &operation.Info{
+				Kind:      operation.KindRebase,
+				Branch:    "feature",
+				Step:      1,
+				Total:     3,
+				Reason:    operation.ReasonConflict,
+				Conflicts: 2,
+			},
+			want: "[c][s][rebase] [c][b]B>feature [c][d]1/3 [c][x]conflict 2",
+		},
+		{
+			name: "cherry-pick, single commit empty pause: progress unknown",
+			op: &operation.Info{
+				Kind:   operation.KindCherryPick,
+				Branch: "main",
+				Step:   operation.Unknown,
+				Total:  operation.Unknown,
+				Reason: operation.ReasonEmpty,
+			},
+			want: "[c][s][cherry-pick] [c][b]B>main [c][d]unknown [c][o]empty",
+		},
+		{
+			name: "revert edit-like stop: every missing field is unknown",
+			op: &operation.Info{
+				Kind:   operation.KindRevert,
+				Step:   operation.Unknown,
+				Total:  operation.Unknown,
+				Reason: operation.ReasonUnknown,
+			},
+			want: "[c][s][revert] [c][b]B>unknown [c][d]unknown [c][o]unknown",
+		},
+		{
+			name: "rebase resolved, waiting for continue: zero conflicts, still paused",
+			op: &operation.Info{
+				Kind:   operation.KindRebase,
+				Branch: "feature",
+				Step:   2,
+				Total:  3,
+				Reason: operation.ReasonStaged,
+			},
+			want: "[c][s][rebase] [c][b]B>feature [c][d]2/3 [c][o]staged",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := &Formater{
+				Config: Config{
+					Styles: styles{
+						Clear:      "[c]",
+						State:      "[s]",
+						Branch:     "[b]",
+						Divergence: "[d]",
+						Conflict:   "[x]",
+						Op:         "[o]",
+					},
+					Symbols: symbols{Branch: "B>"},
+					Layout:  []string{"op"},
+				},
+				st: &gitstatus.Status{},
+				Op: tt.op,
+			}
+			compareStrings(t, tt.want, f.operation())
+		})
+	}
+}
+
+func TestOperationLayout(t *testing.T) {
+	f := &Formater{
+		Config: Config{
+			Styles: styles{
+				Clear:      "[c]",
+				State:      "[s]",
+				Branch:     "[b]",
+				Divergence: "[d]",
+				Conflict:   "[x]",
+				Op:         "[o]",
+			},
+			Symbols: symbols{Branch: "B>"},
+			Layout:  []string{"op", "|", "flags"},
+		},
+		st: &gitstatus.Status{},
+		Op: &operation.Info{
+			Kind:      operation.KindRebase,
+			Branch:    "feat",
+			Step:      1,
+			Total:     2,
+			Reason:    operation.ReasonConflict,
+			Conflicts: 1,
+		},
+	}
+	want := "[c][s][rebase] [c][b]B>feat [c][d]1/2 [c][x]conflict 1" +
+		"[c]|" + resetStyles
+	if err := f.Format(io.Discard, &gitstatus.Status{}); err != nil {
+		t.Fatal(err)
+	}
+	compareStrings(t, want, f.format())
 }
 
 func compareStrings(t *testing.T, want, got string) {

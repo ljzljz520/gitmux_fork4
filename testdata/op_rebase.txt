@@ -1,0 +1,132 @@
+env GIT_EDITOR=true
+
+# Repo with a 2-commit 'feat' branch that conflicts at every step when rebased
+# onto main (every commit rewrites f entirely).
+exec git init
+exec git checkout -b main
+exec git config user.email tester@email.com
+exec git config user.name Testeur
+
+cp f-base f
+exec git add f
+exec git commit -m base
+
+exec git checkout -b feat
+cp f-a f
+exec git commit -am f1
+cp f-b f
+exec git commit -am f2
+
+exec git checkout main
+cp f-x f
+exec git commit -am mainx
+
+# Build gitmux and go back to work dir.
+cd $GITMUX_DIR
+go build -o $WORK/gitmux .
+cd $WORK
+
+# Rebase pauses on step 1/2 with a conflict.
+exec git checkout feat
+! exec git rebase main
+exec ./gitmux --cfg gitmux.yml
+stdout '\[rebase\] feat 1/2 conflict 1\|C1'
+stdout '\[rebase\] [0-9a-f]+'
+
+# Metadata missing/changed: branch and progress become 'unknown', but the
+# conflict evidence keeps the paused operation visible.
+rm .git/rebase-merge/head-name
+rm .git/rebase-merge/msgnum
+exec ./gitmux --cfg gitmux.yml
+stdout '\[rebase\] unknown unknown conflict 1'
+
+# Restore metadata.
+cp head-name .git/rebase-merge/head-name
+cp msgnum .git/rebase-merge/msgnum
+
+# Zero conflicts after resolving does NOT complete the rebase: staged changes
+# are reported as the pause reason.
+cp resolved f
+exec git add f
+exec ./gitmux --cfg gitmux.yml
+stdout '\[rebase\] feat 1/2 staged'
+
+# Continue: step advances to 2/2 with another conflict.
+! exec git rebase --continue
+exec ./gitmux --cfg gitmux.yml
+stdout '\[rebase\] feat 2/2 conflict 1\|C1'
+
+# Resolve and continue to completion: operation summary disappears and the
+# original branch is back.
+cp resolved f
+exec git add f
+exec git rebase --continue
+exec ./gitmux --cfg gitmux.yml
+! stdout '\[rebase\]'
+stdout 'feat'
+
+# Pause a new rebase (single conflicting commit) and abort: metadata must be
+# cleared and the branch restored.
+exec git branch base-main main
+exec git checkout main
+cp f-y f
+exec git commit -am mainy
+exec git checkout -b aborttest base-main
+cp f-z f
+exec git commit -am f3
+! exec git rebase main
+exec ./gitmux --cfg gitmux.yml
+stdout '\[rebase\] aborttest 1/1 conflict 1\|C1'
+exec git rebase --abort
+exec ./gitmux --cfg gitmux.yml
+! stdout '\[rebase\]'
+stdout 'aborttest'
+
+-- .gitignore --
+.gitignore
+.gopath
+.tmp
+gitmux
+gitmux.yml
+f-base
+f-a
+f-b
+f-x
+f-y
+f-z
+resolved
+head-name
+msgnum
+
+-- f-base --
+base
+-- f-a --
+aaa
+-- f-b --
+bbb
+-- f-x --
+main-x
+-- f-y --
+main-y
+-- f-z --
+feat-z
+-- resolved --
+resolved-content
+-- head-name --
+refs/heads/feat
+-- msgnum --
+1
+-- gitmux.yml --
+tmux:
+    symbols:
+        branch: ""
+        conflict: "C"
+    styles:
+        clear: ""
+        state: ""
+        branch: ""
+        divergence: ""
+        conflict: ""
+        staged: ""
+        op: ""
+    layout: [branch, "|", op, "|", flags]

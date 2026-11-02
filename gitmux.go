@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/arl/gitmux/json"
+	"github.com/arl/gitmux/operation"
 	"github.com/arl/gitmux/tmux"
 )
 
@@ -127,9 +128,15 @@ func main() {
 	}
 
 	// Set defauit formater.
-	var fmter formater = &tmux.Formater{Config: cfg.Tmux}
+	tmuxFmter := &tmux.Formater{Config: cfg.Tmux}
+
+	var fmter formater = tmuxFmter
 	if dbg {
 		fmter = &json.Formater{}
+	} else {
+		// Optional in-progress operation summary (rebase, multi-commit
+		// cherry-pick/revert); nil outside of these operations.
+		tmuxFmter.Op = operation.Collect(ctx, st)
 	}
 
 	check(fmter.Format(os.Stdout, st), dbg)

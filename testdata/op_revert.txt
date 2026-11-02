@@ -1,0 +1,102 @@
+env GIT_EDITOR=true
+
+# Linear history where each commit rewrites f; a later mainx commit makes every
+# revert of a/b/c conflict.
+exec git init
+exec git checkout -b main
+exec git config user.email tester@email.com
+exec git config user.name Testeur
+
+cp f-base f
+exec git add f
+exec git commit -m base
+cp f-a f
+exec git commit -am a
+cp f-b f
+exec git commit -am b
+cp f-c f
+exec git commit -am c
+cp f-x f
+exec git commit -am mainx
+
+# Build gitmux and go back to work dir.
+cd $GITMUX_DIR
+go build -o $WORK/gitmux .
+cd $WORK
+
+# Multi-commit revert pauses on step 1/3 with a conflict.
+! exec git revert --no-edit HEAD~1 HEAD~2 HEAD~3
+exec ./gitmux --cfg gitmux.yml
+stdout '\[revert\] main 1/3 conflict 1\|C1'
+
+# Resolve and continue: step advances to 2/3.
+cp resolved f
+exec git add f
+! exec git revert --continue
+exec ./gitmux --cfg gitmux.yml
+stdout '\[revert\] main 2/3 conflict 1\|C1'
+
+# Abort: sequencer metadata is cleared and main is restored.
+exec git revert --abort
+exec ./gitmux --cfg gitmux.yml
+! stdout '\[revert\]'
+stdout 'main'
+
+# A conflict-free multi-revert runs to completion and leaves no metadata.
+exec git checkout -b clean-revert
+cp f-g g
+exec git add g
+exec git commit -m pg
+cp f-h h
+exec git add h
+exec git commit -m qh
+exec git revert --no-edit HEAD~1 HEAD~2
+exec ./gitmux --cfg gitmux.yml
+! stdout '\[revert\]'
+stdout 'clean-revert'
+
+-- .gitignore --
+.gitignore
+.gopath
+.tmp
+gitmux
+gitmux.yml
+f-base
+f-a
+f-b
+f-c
+f-x
+f-g
+f-h
+resolved
+
+-- f-base --
+base
+-- f-a --
+aaa
+-- f-b --
+bbb
+-- f-c --
+ccc
+-- f-x --
+main-x
+-- f-g --
+g-content
+-- f-h --
+h-content
+-- resolved --
+resolved-content
+-- gitmux.yml --
+tmux:
+    symbols:
+        branch: ""
+        conflict: "C"
+    styles:
+        clear: ""
+        state: ""
+        branch: ""
+        divergence: ""
+        conflict: ""
+        staged: ""
+        op: ""
+    layout: [branch, "|", op, "|", flags]
